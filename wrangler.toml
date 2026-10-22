@@ -26,7 +26,7 @@ crons = ["0 20 * * *"]
 # 記録を受け付けるサイト（ポートフォリオ）。複数ある場合はカンマ区切り
 ALLOWED_ORIGINS = "https://haru2401game.github.io"
 # Discord の日報に付けるダッシュボードのURL（デプロイ後に表示されるURL）
-DASHBOARD_URL = ""
+DASHBOARD_URL = "https://portfolio-analytics.haru2401game.workers.dev/"
 
 # 秘密の値（DASHBOARD_PASSWORD / SESSION_SECRET / DISCORD_WEBHOOK_URL）は
 # ここには書かず、GitHub の Secrets に登録します（README 参照）
