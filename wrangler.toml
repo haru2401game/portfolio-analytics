@@ -22,6 +22,32 @@ migrations_dir = "migrations"
 [triggers]
 crons = ["0 20 * * *"]
 
+# 同じ相手（IPアドレス）からの連続アクセスの上限（1分あたり・場所ごとのおおよその数）
+# IPアドレスは回数を数えるのに使うだけで、データベースには保存しない
+[[ratelimits]]
+name = "COLLECT_LIMITER"   # アクセス記録の送信
+namespace_id = "2401"
+
+  [ratelimits.simple]
+  limit = 120
+  period = 60
+
+[[ratelimits]]
+name = "LIKE_LIMITER"      # いいねの送信
+namespace_id = "2402"
+
+  [ratelimits.simple]
+  limit = 90
+  period = 60
+
+[[ratelimits]]
+name = "LOGIN_LIMITER"     # ログインの試行
+namespace_id = "2403"
+
+  [ratelimits.simple]
+  limit = 5
+  period = 60
+
 [vars]
 # 記録を受け付けるサイト（ポートフォリオ）。複数ある場合はカンマ区切り
 ALLOWED_ORIGINS = "https://haru2401game.github.io"

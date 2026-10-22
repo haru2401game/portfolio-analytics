@@ -768,3 +768,8 @@ h1 {
         animation: none !important;
     }
 }
+
+/* インライン style を使わない（Content-Security-Policy で禁止しているため） */
+.legend i.legend-pv { background: #ffc2c5; }
+.legend i.legend-sessions { background: #007caa; }
+.note.note-spaced { margin-bottom: 12px; }

@@ -55,7 +55,8 @@ const MAX_SECTIONS = 60;              // 登録できるセクション数の上
 const LIKES_PER_REQUEST = 50;         // 1回の送信で加算できるいいねの上限（連打はまとめて送られる）
 const LIKES_PER_SESSION_DAY = 3000;   // 1つの訪問が1日に加算できる上限（人の連打では届かない数）
 const LOGIN_DAYS = 30;                // ログインの有効期限
-const LOGIN_FAIL_LIMIT = 10;          // 15分間にこの回数ログインに失敗したら一時停止
+const LOGIN_FAIL_LIMIT = 30;          // 15分間に（全体で）この回数ログインに失敗したら一時停止
+const DAILY_EVENT_LIMIT = 20000;      // 1日に保存する記録の上限（荒らしで無料枠を使い切られないように）
 const BOT_PATTERN = /bot|crawl|spider|slurp|headless|lighthouse|preview|facebookexternalhit|embedly|monitor|curl|wget|python|axios|node-fetch/i;
 
 const JST_OFFSET = 9 * 60 * 60 * 1000;
@@ -112,7 +113,7 @@ async function route(request, env, ctx) {
 
     // ログイン画面とその見た目に必要なファイルだけはログイン前でも返す
     if (path === "/login" || path === "/login.html") return asset(env, request, "/login.html");
-    if (path === "/style.css" || path === "/favicon.svg") return asset(env, request, path);
+    if (path === "/style.css" || path === "/favicon.svg" || path === "/login.js") return asset(env, request, path);
 
     const authed = await isAuthed(request, env);
 
@@ -123,28 +124,70 @@ async function route(request, env, ctx) {
         return json({ error: "not_found" }, 404);
     }
 
-    if (!authed) return Response.redirect(new URL("/login", url).toString(), 302);
+    if (!authed) return redirect(new URL("/login", url).toString(), 302);
     if (path === "/" || path === "/index.html") return asset(env, request, "/index.html");
     if (path === "/app.js") return asset(env, request, path);
 
-    return new Response("Not Found", { status: 404 });
+    return new Response("Not Found", { status: 404, headers: secure(new Headers({ "Content-Type": "text/plain; charset=utf-8" })) });
+}
+
+/* ========================================
+   セキュリティ
+======================================== */
+
+// ダッシュボードで読み込んでよいもの（自分のファイルと Google Fonts だけ）
+const DASHBOARD_CSP = [
+    "default-src 'none'",
+    "script-src 'self'",
+    "style-src 'self' https://fonts.googleapis.com",
+    "font-src https://fonts.gstatic.com",
+    "img-src 'self' data:",
+    "connect-src 'self'",
+    "form-action 'self'",
+    "base-uri 'none'",
+    "frame-ancestors 'none'",
+].join("; ");
+
+function secure(headers, csp = DASHBOARD_CSP) {
+    headers.set("Content-Security-Policy", csp);
+    headers.set("X-Content-Type-Options", "nosniff");
+    headers.set("X-Frame-Options", "DENY");
+    // 同じサイト内だけ送る（ログインフォームの送信元を確かめるのに必要。外部サイトには何も送らない）
+    headers.set("Referrer-Policy", "same-origin");
+    headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
+    headers.set("X-Robots-Tag", "noindex, nofollow");
+    return headers;
+}
+
+// 同じ相手（IPアドレス）からの連続アクセスを制限する。
+// IPアドレスは Cloudflare の回数カウントに使うだけで、データベースには保存しない
+async function rateLimited(limiter, request, scope) {
+    if (!limiter) return false;
+    const ip = request.headers.get("CF-Connecting-IP") || "";
+    if (!ip) return false;
+    try {
+        const { success } = await limiter.limit({ key: `${scope}:${ip}` });
+        return !success;
+    } catch {
+        return false;
+    }
 }
 
 async function asset(env, request, path) {
     const response = await env.ASSETS.fetch(new Request(new URL(path, request.url)));
-    const headers = new Headers(response.headers);
+    const headers = secure(new Headers(response.headers));
     headers.set("Cache-Control", "no-store");
-    headers.set("X-Robots-Tag", "noindex, nofollow");
-    headers.set("X-Frame-Options", "DENY");
-    headers.set("Referrer-Policy", "no-referrer");
     return new Response(response.body, { status: response.status, headers });
 }
 
+function redirect(location, status = 303, extra = {}) {
+    return new Response(null, { status, headers: secure(new Headers({ Location: location, "Cache-Control": "no-store", ...extra })) });
+}
+
 function json(data, status = 200, extra = {}) {
-    return new Response(JSON.stringify(data), {
-        status,
-        headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", ...extra },
-    });
+    const headers = secure(new Headers({ "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", ...extra }), "default-src 'none'; frame-ancestors 'none'");
+    return new Response(JSON.stringify(data), { status, headers });
 }
 
 /* ========================================
@@ -200,6 +243,9 @@ async function collect(request, env) {
     // 許可したサイト（ポートフォリオ）以外からの記録は保存しない
     if (!allowed.includes(origin)) return new Response(null, { status: 204 });
 
+    // 同じ相手から短時間に大量に送られてきたら保存しない（荒らし対策）
+    if (await rateLimited(env.COLLECT_LIMITER, request, "collect")) return new Response(null, { status: 429, headers: cors });
+
     const ua = request.headers.get("User-Agent") || "";
     if (!ua || BOT_PATTERN.test(ua)) return new Response(null, { status: 204, headers: cors });
 
@@ -221,11 +267,14 @@ async function collect(request, env) {
     const device = deviceFrom(body.w ?? list[0]?.w, ua);
     const country = cleanText(request.cf?.country, 2);
 
-    const used = await env.DB
-        .prepare("SELECT COUNT(*) AS n FROM events WHERE session = ?")
-        .bind(session)
-        .first();
-    let room = MAX_EVENTS_PER_SESSION - Number(used?.n || 0);
+    const [used, today] = await env.DB.batch([
+        env.DB.prepare("SELECT COUNT(*) AS n FROM events WHERE session = ?").bind(session),
+        env.DB.prepare("SELECT COUNT(*) AS n FROM events WHERE day = ?").bind(day),
+    ]);
+    let room = Math.min(
+        MAX_EVENTS_PER_SESSION - Number(used?.results?.[0]?.n || 0),
+        DAILY_EVENT_LIMIT - Number(today?.results?.[0]?.n || 0),
+    );
 
     const statements = [];
     for (const item of list) {
@@ -293,6 +342,9 @@ async function likes(request, env) {
 
     const ua = request.headers.get("User-Agent") || "";
     if (!ua || BOT_PATTERN.test(ua)) return json({ total: await likeTotal(env) }, 200, cors);
+
+    // 同じ相手からの連続送信は加算しない（人の連打では届かない回数）
+    if (await rateLimited(env.LIKE_LIMITER, request, "likes")) return json({ total: await likeTotal(env), added: 0 }, 200, cors);
 
     let body;
     try {
@@ -369,15 +421,24 @@ async function isAuthed(request, env) {
 }
 
 async function login(request, env) {
-    if (!env.DASHBOARD_PASSWORD || !env.SESSION_SECRET) {
-        return Response.redirect(new URL("/login?error=setup", request.url).toString(), 303);
+    const back = (code) => redirect(new URL(`/login?error=${code}`, request.url).toString());
+
+    if (!env.DASHBOARD_PASSWORD || !env.SESSION_SECRET) return back("setup");
+
+    // 他のサイトに置かれたフォームからのログインは受け付けない（失敗回数にも数えない）
+    const origin = request.headers.get("Origin");
+    const site = request.headers.get("Sec-Fetch-Site");
+    if ((origin && origin !== new URL(request.url).origin) || (site && site !== "same-origin" && site !== "none")) {
+        return json({ error: "forbidden" }, 403);
     }
+
+    // 同じ相手からの連続ログインを止める（1分に5回まで）。
+    // これで、他人がわざと失敗を重ねて本人をしめ出すことも難しくなる
+    if (await rateLimited(env.LOGIN_LIMITER, request, "login")) return back("locked");
 
     const since = Date.now() - 15 * 60 * 1000;
     const fails = await env.DB.prepare("SELECT COUNT(*) AS n FROM login_failures WHERE ts > ?").bind(since).first();
-    if (Number(fails?.n || 0) >= LOGIN_FAIL_LIMIT) {
-        return Response.redirect(new URL("/login?error=locked", request.url).toString(), 303);
-    }
+    if (Number(fails?.n || 0) >= LOGIN_FAIL_LIMIT) return back("locked");
 
     const form = await request.formData();
     const password = String(form.get("password") || "");
@@ -390,26 +451,19 @@ async function login(request, env) {
 
     if (!ok) {
         await env.DB.prepare("INSERT INTO login_failures (ts) VALUES (?)").bind(Date.now()).run();
-        return Response.redirect(new URL("/login?error=1", request.url).toString(), 303);
+        return back("1");
     }
 
     await env.DB.prepare("DELETE FROM login_failures").run();
     const exp = Date.now() + LOGIN_DAYS * 24 * 60 * 60 * 1000;
     const value = `${exp}.${await hmac(env.SESSION_SECRET, `login:${exp}`)}`;
-    return new Response(null, {
-        status: 303,
-        headers: {
-            Location: "/",
-            "Set-Cookie": `pa_login=${value}; Path=/; Max-Age=${LOGIN_DAYS * 86400}; HttpOnly; Secure; SameSite=Strict`,
-        },
+    return redirect("/", 303, {
+        "Set-Cookie": `pa_login=${value}; Path=/; Max-Age=${LOGIN_DAYS * 86400}; HttpOnly; Secure; SameSite=Strict`,
     });
 }
 
 function logout() {
-    return new Response(null, {
-        status: 303,
-        headers: { Location: "/login", "Set-Cookie": "pa_login=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict" },
-    });
+    return redirect("/login", 303, { "Set-Cookie": "pa_login=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict" });
 }
 
 /* ========================================
@@ -546,6 +600,17 @@ function signed(n) {
     return n > 0 ? `+${n}` : n < 0 ? `${n}` : "±0";
 }
 
+// 日報に載せる名前から、Discord の書式やリンクになる文字を取り除く
+// （誰でも送れる記録なので、偽のリンクやメンションを日報に紛れ込ませないため）
+export function plain(value) {
+    return String(value ?? "")
+        .replace(/[\\`*_~|<>[\]()#@]/g, "")
+        .replace(/:\/\//g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 60) || "(名前なし)";
+}
+
 function percent(rate) {
     return `${Math.round(rate * 100)}%`;
 }
@@ -567,12 +632,12 @@ export async function buildReport(db, day, dashboardUrl) {
         lines.push(`\n**📖 読まれたセクション**（訪問のうち何%が到達したか）`);
         const bar = (rate) => "■".repeat(Math.round(rate * 10)).padEnd(10, "□");
         for (const row of s.sections) {
-            lines.push(`\`${bar(row.rate)}\` ${row.label} ${percent(row.rate)}`);
+            lines.push(`\`${bar(row.rate)}\` ${plain(row.label)} ${percent(row.rate)}`);
         }
 
         lines.push(`\n**🎮 クリックされた作品**`);
         if (s.works.length) {
-            s.works.slice(0, 5).forEach((row, i) => lines.push(`${i + 1}. ${row.name}　${row.count}回`));
+            s.works.slice(0, 5).forEach((row, i) => lines.push(`${i + 1}. ${plain(row.name)}　${row.count}回`));
         } else {
             lines.push("なし");
         }
@@ -583,10 +648,10 @@ export async function buildReport(db, day, dashboardUrl) {
             ["✉️ 連絡", s.contact],
         ].filter(([, list]) => list.length);
         for (const [label, list] of extra) {
-            lines.push(`${label}：${list.slice(0, 3).map((row) => `${row.name}（${row.count}）`).join("、")}`);
+            lines.push(`${label}：${list.slice(0, 3).map((row) => `${plain(row.name)}（${row.count}）`).join("、")}`);
         }
 
-        lines.push(`\n**🔗 流入元**：${s.referrers.slice(0, 3).map((row) => `${row.name}（${row.sessions}）`).join("、")}`);
+        lines.push(`\n**🔗 流入元**：${s.referrers.slice(0, 3).map((row) => `${plain(row.name)}（${row.sessions}）`).join("、")}`);
         lines.push(`**📱 端末**：${s.devices.map((row) => `${deviceLabel(row.name)} ${row.sessions}`).join(" / ")}`);
     }
 

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import worker, { buildReport, jstDay, addDays } from "../src/index.js";
+import worker, { buildReport, jstDay, addDays, plain } from "../src/index.js";
 import { createD1 } from "./d1.mjs";
 
 const root = new URL("..", import.meta.url).pathname;
@@ -89,7 +89,7 @@ r = await call("/api/summary", { headers: { Cookie: `pa_login=1.${"0".repeat(64)
 assert.equal(r.status, 401);
 
 // lockout after 10 failures
-for (let i = 0; i < 10; i += 1) await call("/login", { method: "POST", body: form("nope") });
+for (let i = 0; i < 30; i += 1) await call("/login", { method: "POST", body: form("nope") });
 r = await call("/login", { method: "POST", body: form("correct horse") });
 assert.match(r.headers.get("Location"), /error=locked/);
 db.raw.exec("DELETE FROM login_failures");
@@ -210,6 +210,63 @@ r = await call("/api/report", { method: "POST", headers: { ...auth.headers, Orig
 assert.equal(r.status, 403);
 r = await call("/api/report", { method: "POST", headers: { ...auth.headers, Origin: "https://pa.example" }, body: "{}" });
 assert.deepEqual((await r.json()).sent, true);
+
+// ---------- security ----------
+{
+    // security headers on pages and API
+    let res = await call("/login");
+    assert.match(res.headers.get("Content-Security-Policy"), /script-src 'self'/);
+    assert.match(res.headers.get("Content-Security-Policy"), /frame-ancestors 'none'/);
+    assert.equal(res.headers.get("X-Content-Type-Options"), "nosniff");
+    assert.match(res.headers.get("Strict-Transport-Security"), /max-age=/);
+    res = await call("/api/summary");
+    assert.equal(res.status, 401);
+    assert.equal(res.headers.get("X-Content-Type-Options"), "nosniff");
+    res = await call("/login.js");
+    assert.equal(await res.text(), "asset:/login.js", "login script is public");
+    res = await call("/app.js");
+    assert.equal(res.status, 302, "dashboard script needs login");
+
+    // login form posted from another site is rejected and not counted as a failure
+    db.raw.exec("DELETE FROM login_failures");
+    res = await call("/login", { method: "POST", headers: { Origin: "https://evil.example" }, body: form("nope") });
+    assert.equal(res.status, 403);
+    assert.equal(db.raw.prepare("SELECT COUNT(*) n FROM login_failures").get().n, 0);
+
+    // rate limiters (Cloudflare binding mocked: allow N per key)
+    const limiter = (max) => { const seen = new Map(); return { limit: async ({ key }) => { const n = (seen.get(key) || 0) + 1; seen.set(key, n); return { success: n <= max }; } }; };
+    env.LOGIN_LIMITER = limiter(5);
+    const ipA = { "CF-Connecting-IP": "203.0.113.1" };
+    for (let i = 0; i < 5; i += 1) await call("/login", { method: "POST", headers: ipA, body: form("nope") });
+    res = await call("/login", { method: "POST", headers: ipA, body: form("correct horse") });
+    assert.match(res.headers.get("Location"), /error=locked/, "same IP is slowed down");
+    res = await call("/login", { method: "POST", headers: { "CF-Connecting-IP": "198.51.100.7" }, body: form("correct horse") });
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get("Location"), "/", "owner on another IP can still log in");
+    delete env.LOGIN_LIMITER;
+    db.raw.exec("DELETE FROM login_failures");
+
+    env.COLLECT_LIMITER = limiter(2);
+    const before = count();
+    for (let i = 0; i < 4; i += 1) await post({ s: `rl${i}abcdef`, events: [{ t: "pageview", n: "/" }] }, ipA);
+    assert.equal(count() - before, 2, "collect is rate limited per IP");
+    delete env.COLLECT_LIMITER;
+
+    env.LIKE_LIMITER = limiter(1);
+    const likePost = () => call("/likes", { method: "POST", headers: { Origin: "https://haru2401game.github.io", "User-Agent": UA, ...ipA }, body: JSON.stringify({ s: "likeabcd1", n: 50 }) });
+    const first = await (await likePost()).json();
+    const second = await (await likePost()).json();
+    assert.equal(first.added, 50);
+    assert.equal(second.added, 0, "likes are rate limited per IP");
+    delete env.LIKE_LIMITER;
+
+    // Discord report: names sent by anyone cannot become links, mentions or markup
+    assert.equal(plain("[Click](https://evil.example) @everyone **bold**"), "Clickhttps evil.example everyone bold");
+    assert.equal(plain(""), "(名前なし)");
+    await post({ s: "mdxss123", w: 1440, events: [{ t: "pageview", n: "/" }, { t: "work_click", n: "[free](https://evil.example)" }] });
+    const rep = await buildReport(db, jstDay(Date.now()), "");
+    assert.ok(!/\]\(|https?:\/\/evil/.test(rep.embeds[0].description), "no masked link in report");
+}
 
 console.log("all unit tests passed");
 console.log("\n--- sample Discord report ---\n" + report.embeds[0].title + "\n" + text);
