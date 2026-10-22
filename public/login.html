@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>ログイン | Portfolio Analytics</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400..900&family=Noto+Sans+JP:wght@400..900&display=swap">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main class="login">
+    <form class="login-card" method="post" action="/login">
+        <div class="brand-mark" aria-hidden="true">PA</div>
+        <p class="eyebrow">PORTFOLIO ANALYTICS</p>
+        <h1>PRESS START</h1>
+        <p>ポートフォリオのアクセス解析です。パスワードを入力してください。</p>
+        <p class="login-error" id="error" hidden></p>
+        <label for="password">PASSWORD</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
+        <button class="press" type="submit">LOGIN ▶</button>
+    </form>
+</main>
+<script>
+    const messages = {
+        "1": "パスワードが違います。",
+        "locked": "ログインの失敗が続いたため、15分ほど停止しています。",
+        "setup": "パスワードがまだ設定されていません（README の手順を確認してください）。",
+    };
+    const code = new URLSearchParams(location.search).get("error");
+    if (code && messages[code]) {
+        const box = document.getElementById("error");
+        box.textContent = messages[code];
+        box.hidden = false;
+    }
+</script>
+</body>
+</html>

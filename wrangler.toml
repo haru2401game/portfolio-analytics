@@ -1,0 +1,32 @@
+# Cloudflare Workers の設定
+name = "portfolio-analytics"
+main = "src/index.js"
+compatibility_date = "2026-06-01"
+
+# ダッシュボードの画面ファイル（ログインしていないと Worker が返さない）
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = true
+html_handling = "none"
+not_found_handling = "none"
+
+# データベース（README の手順で作成した D1 の ID を database_id に貼る）
+[[d1_databases]]
+binding = "DB"
+database_name = "portfolio-analytics"
+database_id = "c5c5f0c0-cf0c-4e5d-849b-886e2bdfec5d"
+migrations_dir = "migrations"
+
+# 毎朝 5:00（日本時間）= 20:00（UTC）に前日分の日報を送る
+[triggers]
+crons = ["0 20 * * *"]
+
+[vars]
+# 記録を受け付けるサイト（ポートフォリオ）。複数ある場合はカンマ区切り
+ALLOWED_ORIGINS = "https://haru2401game.github.io"
+# Discord の日報に付けるダッシュボードのURL（デプロイ後に表示されるURL）
+DASHBOARD_URL = ""
+
+# 秘密の値（DASHBOARD_PASSWORD / SESSION_SECRET / DISCORD_WEBHOOK_URL）は
+# ここには書かず、GitHub の Secrets に登録します（README 参照）

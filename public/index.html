@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Portfolio Analytics</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400..900&family=Noto+Sans+JP:wght@400..900&display=swap">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header class="top">
+    <div class="wrap top-inner">
+        <div class="brand">
+            <span class="brand-mark" aria-hidden="true">PA</span>
+            <div>
+                <b>PORTFOLIO ANALYTICS</b>
+                <small>HARUTA NAGAYA / PRIVATE</small>
+            </div>
+        </div>
+        <div class="controls">
+            <div class="range" role="group" aria-label="集計期間">
+                <button type="button" data-days="1" aria-pressed="false">今日</button>
+                <button type="button" data-days="7" aria-pressed="true">7日</button>
+                <button type="button" data-days="30" aria-pressed="false">30日</button>
+                <button type="button" data-days="90" aria-pressed="false">90日</button>
+            </div>
+            <button type="button" class="ghost" id="report-button" title="前日分の日報をDiscordに送ります">日報テスト</button>
+            <form method="post" action="/logout">
+                <button type="submit" class="ghost">ログアウト</button>
+            </form>
+        </div>
+    </div>
+</header>
+
+<main class="wrap">
+    <div class="head">
+        <div>
+            <p class="eyebrow">DASHBOARD</p>
+            <h1>ポートフォリオ分析</h1>
+        </div>
+        <p class="period" id="period">読み込み中…</p>
+    </div>
+
+    <p class="status" id="status" hidden></p>
+
+    <div class="grid">
+        <div class="kpis">
+            <div class="kpi">
+                <p class="kpi-label">閲覧数</p>
+                <p class="kpi-value" id="kpi-pv">-</p>
+                <span class="delta" id="kpi-pv-delta"></span>
+            </div>
+            <div class="kpi">
+                <p class="kpi-label">訪問数</p>
+                <p class="kpi-value" id="kpi-sessions">-</p>
+                <span class="delta" id="kpi-sessions-delta"></span>
+            </div>
+            <div class="kpi">
+                <p class="kpi-label">平均閲覧セクション</p>
+                <p class="kpi-value" id="kpi-sections">-</p>
+                <span class="delta">全10セクション中</span>
+            </div>
+            <div class="kpi">
+                <p class="kpi-label">作品クリック</p>
+                <p class="kpi-value" id="kpi-works">-</p>
+                <span class="delta" id="kpi-works-sub"></span>
+            </div>
+        </div>
+
+        <section class="panel wide">
+            <div class="panel-head">
+                <h2>日ごとの推移</h2>
+                <div class="legend">
+                    <span><i style="background:#ffc2c5"></i>閲覧数</span>
+                    <span><i style="background:#007caa"></i>訪問数</span>
+                </div>
+            </div>
+            <div id="chart"></div>
+        </section>
+
+        <section class="panel wide">
+            <div class="panel-head">
+                <h2>読まれたセクション</h2>
+                <span class="tag red">REACH</span>
+            </div>
+            <p class="note" style="margin-bottom:12px">訪問のうち、そのセクションがしっかり画面に表示された（画面の4割以上を占めた）割合です。上から順に、どこで離脱しているかが分かります。</p>
+            <ol class="funnel" id="sections"></ol>
+        </section>
+
+        <section class="panel">
+            <div class="panel-head">
+                <h2>クリックされた作品</h2>
+                <span class="tag red">WORKS</span>
+            </div>
+            <ol class="rank" id="works"></ol>
+        </section>
+
+        <section class="panel">
+            <div class="panel-head">
+                <h2>Play Games</h2>
+                <span class="tag green">PLAY</span>
+            </div>
+            <ol class="rank" id="plays"></ol>
+        </section>
+
+        <section class="panel third">
+            <div class="panel-head">
+                <h2>流入元</h2>
+                <span class="tag">FROM</span>
+            </div>
+            <ol class="rank" id="referrers"></ol>
+        </section>
+
+        <section class="panel third">
+            <div class="panel-head">
+                <h2>端末</h2>
+                <span class="tag">DEVICE</span>
+            </div>
+            <div class="split" id="device-split"></div>
+            <ol class="rank" id="devices"></ol>
+        </section>
+
+        <section class="panel third">
+            <div class="panel-head">
+                <h2>国・地域</h2>
+                <span class="tag">REGION</span>
+            </div>
+            <ol class="rank" id="countries"></ol>
+        </section>
+
+        <section class="panel">
+            <div class="panel-head">
+                <h2>そのほかの行動</h2>
+                <span class="tag amber">ACTION</span>
+            </div>
+            <ol class="rank" id="actions"></ol>
+        </section>
+
+        <section class="panel">
+            <div class="panel-head">
+                <h2>外部リンク・連絡</h2>
+                <span class="tag amber">LINK</span>
+            </div>
+            <ol class="rank" id="links"></ol>
+        </section>
+    </div>
+
+    <p class="foot">PORTFOLIO ANALYTICS · 個人を特定する情報は保存していません</p>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>

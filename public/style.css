@@ -1,0 +1,762 @@
+/* ========================================
+   Portfolio Analytics — ポートフォリオと同じ明るいゲームUI
+======================================== */
+
+:root {
+    --ink: #111713;
+    --sub: #5b6560;
+    --line: #e1e7ef;
+    --panel: #f5f8fc;
+    --card: #ffffff;
+    --red: #d6363d;
+    --red-edge: #a8262c;
+    --red-soft: #ffe1e2;
+    --cyan: #007caa;
+    --cyan-soft: #d8f1fb;
+    --green: #178640;
+    --green-soft: #d6f3e0;
+    --amber: #9a6200;
+    --amber-soft: #ffeab0;
+    --dots: radial-gradient(rgba(17, 23, 19, .08) 1px, transparent 1.4px) 0 0 / 22px 22px;
+    --radius: 16px;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html {
+    -webkit-text-size-adjust: 100%;
+}
+
+body {
+    margin: 0;
+    background:
+        radial-gradient(circle at 8% 0%, rgba(214, 54, 61, .08), transparent 32%),
+        radial-gradient(circle at 96% 12%, rgba(0, 124, 170, .08), transparent 30%),
+        var(--dots),
+        var(--panel);
+    color: var(--ink);
+    font-family: "Inter", "Noto Sans JP", "Yu Gothic", system-ui, sans-serif;
+    line-height: 1.6;
+    min-height: 100vh;
+}
+
+button,
+select,
+input {
+    font: inherit;
+}
+
+.wrap {
+    width: min(1180px, 100% - 32px);
+    margin: 0 auto;
+}
+
+/* ---------- Header ---------- */
+
+.top {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    border-bottom: 1px solid var(--line);
+    background: rgba(255, 255, 255, .9);
+    backdrop-filter: blur(10px);
+}
+
+.top-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 64px;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.brand-mark {
+    display: grid;
+    flex: none;
+    width: 36px;
+    height: 36px;
+    place-items: center;
+    border-radius: 10px;
+    background: var(--red);
+    box-shadow: 0 3px 0 var(--red-edge);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 900;
+}
+
+.brand b {
+    display: block;
+    font-size: 14px;
+    letter-spacing: .08em;
+    white-space: nowrap;
+}
+
+.brand small {
+    display: block;
+    color: var(--sub);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .16em;
+    white-space: nowrap;
+}
+
+.controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.range {
+    display: inline-flex;
+    padding: 3px;
+    border: 2px solid var(--line);
+    border-radius: 999px;
+    background: #fff;
+}
+
+.range button {
+    padding: 5px 12px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--sub);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.range button[aria-pressed="true"] {
+    background: var(--ink);
+    color: #fff;
+}
+
+.ghost {
+    padding: 7px 12px;
+    border: 2px solid var(--line);
+    border-radius: 999px;
+    background: #fff;
+    color: var(--ink);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.ghost:hover,
+.range button:hover {
+    border-color: var(--ink);
+}
+
+/* ---------- Layout ---------- */
+
+main {
+    padding: 28px 0 60px;
+}
+
+.head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    justify-content: space-between;
+    gap: 8px 16px;
+    margin-bottom: 18px;
+}
+
+.eyebrow {
+    margin: 0 0 4px;
+    color: var(--cyan);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .2em;
+}
+
+h1 {
+    margin: 0;
+    font-size: clamp(28px, 5vw, 44px);
+    font-weight: 900;
+    letter-spacing: -.02em;
+    line-height: 1.1;
+}
+
+.period {
+    margin: 0;
+    color: var(--sub);
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.panel {
+    position: relative;
+    grid-column: span 6;
+    min-width: 0;
+    padding: 20px;
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--card);
+    box-shadow: 0 5px 0 var(--line);
+}
+
+.panel.wide {
+    grid-column: 1 / -1;
+}
+
+.panel.third {
+    grid-column: span 4;
+}
+
+.panel-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px 10px;
+    margin-bottom: 14px;
+}
+
+.panel h2 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 900;
+}
+
+.tag {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: var(--cyan-soft);
+    color: var(--cyan);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .14em;
+}
+
+.tag.red {
+    background: var(--red-soft);
+    color: var(--red-edge);
+}
+
+.tag.green {
+    background: var(--green-soft);
+    color: var(--green);
+}
+
+.tag.amber {
+    background: var(--amber-soft);
+    color: var(--amber);
+}
+
+.note {
+    margin: 0;
+    color: var(--sub);
+    font-size: 12px;
+}
+
+/* ---------- KPI ---------- */
+
+.kpis {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.kpi {
+    padding: 16px 18px;
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--card);
+    box-shadow: 0 5px 0 var(--line);
+}
+
+.kpi-label {
+    margin: 0;
+    color: var(--sub);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .12em;
+}
+
+.kpi-value {
+    margin: 4px 0 2px;
+    font-size: clamp(26px, 4vw, 36px);
+    font-weight: 900;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+}
+
+.kpi:first-child .kpi-value {
+    color: var(--red);
+}
+
+.delta {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--panel);
+    color: var(--sub);
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.delta.up {
+    background: var(--green-soft);
+    color: var(--green);
+}
+
+.delta.down {
+    background: var(--red-soft);
+    color: var(--red-edge);
+}
+
+/* ---------- Chart ---------- */
+
+.chart {
+    width: 100%;
+    height: 240px;
+    overflow: visible;
+}
+
+.chart .grid-line {
+    stroke: var(--line);
+    stroke-width: 1;
+}
+
+.chart .axis {
+    fill: var(--sub);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.chart .bar {
+    fill: var(--red-soft);
+}
+
+.chart .bar:hover,
+.chart .bar.is-active {
+    fill: #ffc2c5;
+}
+
+.chart .line {
+    fill: none;
+    stroke: var(--red);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 3;
+}
+
+.chart .line-sub {
+    fill: none;
+    stroke: var(--cyan);
+    stroke-dasharray: 5 5;
+    stroke-linecap: round;
+    stroke-width: 2;
+}
+
+.chart .dot {
+    fill: #fff;
+    stroke: var(--red);
+    stroke-width: 2.5;
+}
+
+.legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    color: var(--sub);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.legend i {
+    display: inline-block;
+    width: 18px;
+    height: 4px;
+    margin-right: 6px;
+    border-radius: 2px;
+    vertical-align: middle;
+}
+
+.tooltip {
+    position: absolute;
+    z-index: 2;
+    padding: 6px 10px;
+    border-radius: 10px;
+    background: var(--ink);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+/* ---------- Section funnel ---------- */
+
+.funnel {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.funnel li {
+    display: grid;
+    grid-template-columns: 130px minmax(0, 1fr) 92px;
+    align-items: center;
+    gap: 12px;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.funnel .meter {
+    display: grid;
+    grid-template-columns: repeat(10, minmax(0, 1fr));
+    gap: 3px;
+    padding: 3px;
+    border-radius: 7px;
+    background: #f1e3e4;
+}
+
+.funnel .meter span {
+    height: 12px;
+    border-radius: 3px;
+    background: #fff;
+}
+
+.funnel .meter span.on {
+    background: var(--red);
+    box-shadow: inset 0 -2px 0 var(--red-edge);
+}
+
+.funnel .meter span.half {
+    background: linear-gradient(90deg, var(--red) 50%, #fff 50%);
+}
+
+.funnel .num {
+    color: var(--sub);
+    font-size: 12px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.funnel .num b {
+    color: var(--ink);
+    font-size: 14px;
+}
+
+/* ---------- Ranking ---------- */
+
+.rank {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: rank;
+}
+
+.rank li {
+    position: relative;
+    display: grid;
+    grid-template-columns: 26px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 10px;
+    overflow: hidden;
+    border-radius: 10px;
+    background: var(--panel);
+    font-size: 13px;
+    font-weight: 700;
+    counter-increment: rank;
+}
+
+.rank li::before {
+    display: grid;
+    width: 24px;
+    height: 24px;
+    place-items: center;
+    border-radius: 7px;
+    background: #fff;
+    color: var(--sub);
+    content: counter(rank);
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.rank li:nth-child(1)::before {
+    background: var(--red);
+    color: #fff;
+}
+
+.rank li:nth-child(2)::before {
+    background: var(--cyan);
+    color: #fff;
+}
+
+.rank li:nth-child(3)::before {
+    background: var(--green);
+    color: #fff;
+}
+
+.rank .fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    z-index: 0;
+    background: rgba(214, 54, 61, .08);
+}
+
+.rank .label,
+.rank .count,
+.rank li::before {
+    position: relative;
+    z-index: 1;
+}
+
+.rank .label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.rank .count {
+    color: var(--sub);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+.empty {
+    margin: 0;
+    padding: 14px;
+    border: 2px dashed var(--line);
+    border-radius: 12px;
+    color: var(--sub);
+    font-size: 13px;
+    text-align: center;
+}
+
+/* ---------- Device split ---------- */
+
+.split {
+    display: flex;
+    height: 14px;
+    overflow: hidden;
+    margin-bottom: 12px;
+    border-radius: 999px;
+    background: var(--panel);
+}
+
+.split span:nth-child(1) { background: var(--red); }
+.split span:nth-child(2) { background: var(--cyan); }
+.split span:nth-child(3) { background: var(--green); }
+.split span:nth-child(4) { background: var(--amber); }
+
+/* ---------- Status ---------- */
+
+.status {
+    margin: 0 0 16px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: var(--amber-soft);
+    color: var(--amber);
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.status[hidden] {
+    display: none;
+}
+
+.foot {
+    margin-top: 28px;
+    color: var(--sub);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-align: center;
+}
+
+/* ---------- Login ---------- */
+
+.login {
+    display: grid;
+    min-height: 100vh;
+    place-items: center;
+    padding: 24px 16px;
+}
+
+.login-card {
+    width: min(400px, 100%);
+    padding: 30px 26px 26px;
+    border: 2px solid var(--line);
+    border-radius: 20px;
+    background: #fff;
+    box-shadow: 0 6px 0 var(--line);
+    text-align: center;
+}
+
+.login-card .brand-mark {
+    width: 54px;
+    height: 54px;
+    margin: 0 auto 14px;
+    border-radius: 16px;
+    font-size: 22px;
+    animation: bob 3s ease-in-out infinite;
+}
+
+.login-card h1 {
+    font-size: 24px;
+}
+
+.login-card p {
+    margin: 6px 0 20px;
+    color: var(--sub);
+    font-size: 13px;
+}
+
+.login-card label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .1em;
+    text-align: left;
+}
+
+.login-card input {
+    width: 100%;
+    padding: 12px 14px;
+    border: 2px solid var(--line);
+    border-radius: 12px;
+    font-size: 16px;
+}
+
+.login-card input:focus {
+    border-color: var(--red);
+    outline: none;
+}
+
+.press {
+    width: 100%;
+    margin-top: 14px;
+    padding: 12px;
+    border: 0;
+    border-radius: 12px;
+    background: var(--red);
+    box-shadow: 0 4px 0 var(--red-edge);
+    color: #fff;
+    cursor: pointer;
+    font-weight: 900;
+    letter-spacing: .14em;
+}
+
+.press:active {
+    transform: translateY(3px);
+    box-shadow: 0 1px 0 var(--red-edge);
+}
+
+.login-error {
+    margin: 0 0 14px !important;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: var(--red-soft);
+    color: var(--red-edge) !important;
+    font-weight: 700;
+}
+
+@keyframes bob {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
+}
+
+:focus-visible {
+    outline: 3px solid var(--cyan);
+    outline-offset: 2px;
+}
+
+/* ---------- Responsive ---------- */
+
+@media (max-width: 900px) {
+    .panel,
+    .panel.third {
+        grid-column: 1 / -1;
+    }
+
+    .kpis {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 600px) {
+    .top-inner {
+        flex-wrap: wrap;
+        padding: 10px 0;
+    }
+
+    .brand small {
+        display: none;
+    }
+
+    .controls {
+        flex-wrap: wrap;
+        width: 100%;
+        gap: 6px;
+    }
+
+    .range {
+        flex: 1 1 100%;
+        justify-content: space-between;
+    }
+
+    .range button {
+        flex: 1;
+        padding: 5px 6px;
+    }
+
+    .controls .ghost {
+        padding: 6px 10px;
+    }
+
+    .kpis {
+        gap: 10px;
+    }
+
+    .kpi {
+        padding: 12px 14px;
+    }
+
+    .panel {
+        padding: 16px;
+    }
+
+    .funnel li {
+        grid-template-columns: 92px minmax(0, 1fr) 70px;
+        gap: 8px;
+        font-size: 12px;
+    }
+
+    .chart {
+        height: 200px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation: none !important;
+    }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "portfolio-analytics",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "migrate": "wrangler d1 migrations apply portfolio-analytics --remote",
+    "test": "node test/unit.mjs",
+    "preview": "node test/server.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.20.0"
+  }
+}
