@@ -1,10 +1,14 @@
 // Minimal Cloudflare D1 stand-in backed by node:sqlite, for local tests only.
 import { DatabaseSync } from "node:sqlite";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 
-export function createD1(schemaPath) {
+// Applies every migrations/*.sql in order (like `wrangler d1 migrations apply`).
+export function createD1(migrationsDir) {
     const db = new DatabaseSync(":memory:");
-    db.exec(readFileSync(schemaPath, "utf8"));
+    for (const file of readdirSync(migrationsDir).filter((f) => f.endsWith(".sql")).sort()) {
+        db.exec(readFileSync(join(migrationsDir, file), "utf8"));
+    }
 
     class Stmt {
         constructor(sql, args = []) { this.sql = sql; this.args = args; }

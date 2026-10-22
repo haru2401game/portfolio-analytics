@@ -172,6 +172,7 @@ function render(data) {
     $("kpi-pv").textContent = t.pv.toLocaleString();
     $("kpi-sessions").textContent = t.sessions.toLocaleString();
     $("kpi-sections").textContent = t.avgSections.toFixed(1);
+    $("kpi-sections-sub").textContent = `全${data.sections.length}セクション中`;
     $("kpi-works").textContent = t.workClicks.toLocaleString();
     $("kpi-works-sub").textContent = t.sessions ? `訪問あたり ${(t.workClicks / t.sessions).toFixed(2)}回` : "訪問あたり -";
     setDelta($("kpi-pv-delta"), t.pv, t.prevPv, r.days);

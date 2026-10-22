@@ -103,7 +103,7 @@ https://haru2401game.github.io/portfolio/?notrack
 ## カスタマイズ
 
 - **日報の時刻**：`wrangler.toml` の `crons`（UTCで指定。日本時間 = UTC+9。`0 20 * * *` が毎朝5:00）
-- **セクションの追加・名前**：`src/index.js` の `SECTIONS` と、ポートフォリオ `js/analytics.js` のセクション一覧
+- **セクションの追加・並べ替え・削除**：**修正不要**。ポートフォリオの `<section id="…">` を自動で見つけて記録し、表示名は各セクションの見出し、並び順はページ上の順番になります（30日間記録のないセクションは一覧から自動で消えます）
 - **記録する行動の追加**：`src/index.js` の `EVENT_TYPES` と、`js/analytics.js` のクリック処理
 - **記録を残す日数**：`src/index.js` の `RETENTION_DAYS`
 
@@ -111,7 +111,7 @@ https://haru2401game.github.io/portfolio/?notrack
 
 ```
 src/index.js                 Worker 本体（受け取り・ログイン・集計・日報）
-migrations/0001_init.sql     データベースの表
+migrations/                  データベースの表（0001：記録、0002：セクション一覧）
 public/index.html, app.js    ダッシュボード
 public/login.html            ログイン画面
 public/style.css             見た目（ポートフォリオと同じ明るいゲームUI）

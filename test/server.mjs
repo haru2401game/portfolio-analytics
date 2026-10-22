@@ -6,7 +6,7 @@ import worker, { addDays, jstDay } from "../src/index.js";
 import { createD1 } from "./d1.mjs";
 
 const root = new URL("..", import.meta.url).pathname;
-const db = createD1(join(root, "migrations/0001_init.sql"));
+const db = createD1(join(root, "migrations"));
 const types = { ".html": "text/html; charset=utf-8", ".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml" };
 
 const env = {

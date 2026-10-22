@@ -16,7 +16,8 @@
    設定
 ======================================== */
 
-// ポートフォリオのセクション（上から順）。日報・ダッシュボードの並び順と表示名に使う
+// セクションの一覧はポートフォリオ側から自動で届く（sections テーブル）。
+// ここは、まだ届いていないときに使う予備の表示名と並び順
 export const SECTIONS = [
     ["hero", "トップ"],
     ["about", "About"],
@@ -47,6 +48,8 @@ const CLICK_TYPES = ["work_click", "play_click", "photo_open", "video_play", "ui
 
 const MAX_EVENTS_PER_SESSION = 300;   // 1回の訪問で受け付ける記録の上限（荒らし対策）
 const RETENTION_DAYS = 400;           // 記録を残す日数
+const SECTION_ACTIVE_DAYS = 30;       // この日数のあいだ届いていないセクションは「削除された」とみなして一覧から外す
+const MAX_SECTIONS = 60;              // 登録できるセクション数の上限（荒らし対策）
 const LOGIN_DAYS = 30;                // ログインの有効期限
 const LOGIN_FAIL_LIMIT = 10;          // 15分間にこの回数ログインに失敗したら一時停止
 const BOT_PATTERN = /bot|crawl|spider|slurp|headless|lighthouse|preview|facebookexternalhit|embedly|monitor|curl|wget|python|axios|node-fetch/i;
@@ -158,6 +161,11 @@ function cleanText(value, max) {
         .slice(0, max);
 }
 
+// Discord やダッシュボードで悪さをしない文字だけ残す（@メンション・リンク記法などを除く）
+function cleanLabel(value) {
+    return cleanText(value, 40).replace(/[@`*_~|<>[\]()#]/g, "").trim();
+}
+
 function deviceFrom(width, ua) {
     const w = Number(width) || 0;
     if (/iPad|Tablet/i.test(ua) || (w >= 600 && w < 1024 && /Mobile|Android/i.test(ua))) return "tablet";
@@ -223,6 +231,18 @@ async function collect(request, env) {
         const referrer = type === "pageview" ? referrerHost(item.r) : "";
 
         if (type === "section_view") {
+            if (!/^[a-z0-9_-]{1,40}$/.test(name)) continue;
+
+            // セクション一覧（表示名・順番）を最新に保つ
+            const label = cleanLabel(item.l) || name;
+            const ord = Math.min(Math.max(Math.floor(Number(item.o)) || 0, 0), 999);
+            statements.push(env.DB.prepare(
+                `INSERT INTO sections (id, label, ord, updated)
+                 SELECT ?, ?, ?, ?
+                 WHERE (SELECT COUNT(*) FROM sections) < ? OR EXISTS (SELECT 1 FROM sections WHERE id = ?)
+                 ON CONFLICT(id) DO UPDATE SET label = excluded.label, ord = excluded.ord, updated = excluded.updated`
+            ).bind(name, label, ord, now, MAX_SECTIONS, name));
+
             // 同じ訪問で同じセクションは1回だけ数える
             statements.push(env.DB.prepare(
                 `INSERT INTO events (ts, day, type, name, session, referrer, device, country)
@@ -325,7 +345,7 @@ function logout() {
    集計
 ======================================== */
 
-const SECTION_LABEL = Object.fromEntries(SECTIONS);
+const FALLBACK_SECTIONS = new Map(SECTIONS.map(([id, label], index) => [id, { label, ord: index }]));
 
 function rows(result) {
     return result?.results ?? [];
@@ -338,7 +358,9 @@ export async function buildSummary(db, to, days) {
 
     const range = (sql) => db.prepare(sql).bind(from, to);
 
-    const [daily, unique, prev, sections, clicks, referrers, devices, countries] = await db.batch([
+    const activeSince = Date.now() - SECTION_ACTIVE_DAYS * 24 * 60 * 60 * 1000;
+
+    const [daily, unique, prev, sections, sectionMeta, clicks, referrers, devices, countries] = await db.batch([
         range(`SELECT day,
                       SUM(type = 'pageview') AS pv,
                       COUNT(DISTINCT CASE WHEN type = 'pageview' THEN session END) AS sessions
@@ -349,6 +371,7 @@ export async function buildSummary(db, to, days) {
                     FROM events WHERE day BETWEEN ? AND ?`).bind(prevFrom, prevTo),
         range(`SELECT name, COUNT(DISTINCT session) AS sessions
                FROM events WHERE type = 'section_view' AND day BETWEEN ? AND ? GROUP BY name`),
+        db.prepare("SELECT id, label, ord, updated FROM sections ORDER BY ord, id"),
         range(`SELECT type, name, COUNT(*) AS count, COUNT(DISTINCT session) AS sessions
                FROM events WHERE type IN (${CLICK_TYPES.map((t) => `'${t}'`).join(",")}) AND day BETWEEN ? AND ?
                GROUP BY type, name ORDER BY count DESC, name`),
@@ -374,11 +397,26 @@ export async function buildSummary(db, to, days) {
     const pv = series.reduce((sum, row) => sum + row.pv, 0);
     const sessionTotal = Number(rows(unique)[0]?.n || 0);
 
+    // セクション一覧：ポートフォリオから届いた一覧（最近届いたもの）＋この期間に記録があるもの
     const sectionMap = new Map(rows(sections).map((row) => [row.name, Number(row.sessions)]));
-    const sectionList = SECTIONS.map(([id, label]) => {
-        const reached = sectionMap.get(id) || 0;
-        return { id, label, sessions: reached, rate: sessionTotal ? reached / sessionTotal : 0 };
-    });
+    const meta = new Map();
+    for (const row of rows(sectionMeta)) {
+        if (Number(row.updated) >= activeSince || sectionMap.has(row.id)) {
+            meta.set(row.id, { label: row.label, ord: Number(row.ord) });
+        }
+    }
+    if (!meta.size) {
+        FALLBACK_SECTIONS.forEach((value, id) => meta.set(id, value));
+    }
+    for (const id of sectionMap.keys()) {
+        if (!meta.has(id)) meta.set(id, FALLBACK_SECTIONS.get(id) || { label: id, ord: 999 });
+    }
+    const sectionList = [...meta.entries()]
+        .sort((a, b) => a[1].ord - b[1].ord || a[0].localeCompare(b[0]))
+        .map(([id, { label }]) => {
+            const reached = sectionMap.get(id) || 0;
+            return { id, label, sessions: reached, rate: sessionTotal ? reached / sessionTotal : 0 };
+        });
 
     const group = (type) => rows(clicks)
         .filter((row) => row.type === type)
@@ -419,7 +457,7 @@ async function apiSummary(url, env) {
     const to = isDay(url.searchParams.get("to")) ? url.searchParams.get("to") : today;
     const days = Math.min(Math.max(Number(url.searchParams.get("days")) || 30, 1), 365);
     const summary = await buildSummary(env.DB, to, days);
-    return json({ ...summary, today, yesterday, sectionOrder: SECTIONS });
+    return json({ ...summary, today, yesterday });
 }
 
 /* ========================================
@@ -475,6 +513,7 @@ export async function buildReport(db, day, dashboardUrl) {
 
     return {
         username: "ポートフォリオ分析bot",
+        allowed_mentions: { parse: [] },
         embeds: [{
             title: `📊 ポートフォリオ日報 ${day}`,
             url: dashboardUrl || undefined,

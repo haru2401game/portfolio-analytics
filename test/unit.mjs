@@ -3,7 +3,7 @@ import worker, { buildReport, jstDay, addDays } from "../src/index.js";
 import { createD1 } from "./d1.mjs";
 
 const root = new URL("..", import.meta.url).pathname;
-const db = createD1(root + "migrations/0001_init.sql");
+const db = createD1(root + "migrations");
 const sent = [];
 globalThis.fetch = async (url, init) => { sent.push({ url, body: JSON.parse(init.body) }); return new Response(null, { status: 204 }); };
 
@@ -105,6 +105,44 @@ assert.equal(s.sections.find((x) => x.id === "about").rate, 0.5);
 assert.equal(s.works[0].count, 1);
 assert.deepEqual(s.referrers.map((x) => x.name).sort(), ["google.com", "直接・不明"]);
 
+// --- sections are discovered automatically from the portfolio
+await post({ s: "sec12345", w: 1440, events: [
+    { t: "pageview", n: "/" },
+    { t: "section_view", n: "hero", l: "トップ", o: 0 },
+    { t: "section_view", n: "about", l: "About", o: 1 },
+    { t: "section_view", n: "new-zone", l: "New Zone", o: 2 },
+    { t: "section_view", n: "contact", l: "Contact", o: 3 },
+] });
+r = await call("/api/summary?days=1", auth);
+let sum = await r.json();
+assert.deepEqual(sum.sections.map((x) => x.id), ["hero", "about", "new-zone", "contact"], "order follows the page");
+assert.equal(sum.sections.find((x) => x.id === "new-zone").label, "New Zone");
+assert.equal(sum.sections.find((x) => x.id === "about").sessions, 2);
+
+// reordered on the page -> order updates
+await post({ s: "sec22345", events: [{ t: "section_view", n: "contact", l: "Contact", o: 1 }, { t: "section_view", n: "about", l: "About", o: 3 }] });
+sum = await (await call("/api/summary?days=1", auth)).json();
+assert.deepEqual(sum.sections.map((x) => x.id), ["hero", "contact", "new-zone", "about"]);
+
+// a section not seen for 30+ days and with no records in range disappears
+db.raw.prepare("INSERT INTO sections (id, label, ord, updated) VALUES ('old-zone', 'Old', 5, 0)").run();
+sum = await (await call("/api/summary?days=1", auth)).json();
+assert.ok(!sum.sections.some((x) => x.id === "old-zone"), "removed section hidden");
+
+// junk is rejected / cleaned
+await post({ s: "sec32345", events: [
+    { t: "section_view", n: "Bad Id!", l: "x" },
+    { t: "section_view", n: "blog", l: "@everyone [click](http://evil) `x`", o: 4 },
+] });
+assert.equal(count("name='Bad Id!'"), 0);
+const blogLabel = db.raw.prepare("SELECT label FROM sections WHERE id='blog'").get().label;
+assert.ok(!/[@\[\]()`]/.test(blogLabel), "label sanitized: " + blogLabel);
+
+// table size cap
+for (let i = 0; i < 70; i += 1) await post({ s: `cap${String(i).padStart(5, "0")}`, events: [{ t: "section_view", n: `zone-${i}`, l: "z", o: 9 }] });
+assert.ok(db.raw.prepare("SELECT COUNT(*) n FROM sections").get().n <= 60, "section table capped");
+db.raw.exec("DELETE FROM sections WHERE id LIKE 'zone-%'; DELETE FROM events WHERE session LIKE 'cap%' OR session LIKE 'sec%'");
+
 // --- report: insert yesterday data
 const today = jstDay(Date.now());
 const y = addDays(today, -1);
@@ -118,6 +156,7 @@ const text = report.embeds[0].description;
 assert.match(report.embeds[0].title, new RegExp(y));
 assert.match(text, /閲覧数 \*\*2\*\*/);
 assert.match(text, /About 50%/);
+assert.deepEqual(report.allowed_mentions, { parse: [] });
 assert.match(text, /1\. Falien　1回/);
 assert.match(text, /スマホ 1/);
 
