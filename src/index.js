@@ -4,6 +4,8 @@
  * ポートフォリオサイトのアクセス解析を Cloudflare Workers + D1 だけで行う。
  *
  *   POST /collect        ポートフォリオから届く記録を受け取る（誰でも送れる・保存のみ）
+ *   GET  /likes          いいねの累計（ポートフォリオに表示）
+ *   POST /likes          いいねを加算する
  *   GET  /               ダッシュボード（ログインした本人だけ）
  *   POST /login          パスワードでログイン
  *   POST /logout         ログアウト
@@ -50,6 +52,8 @@ const MAX_EVENTS_PER_SESSION = 300;   // 1回の訪問で受け付ける記録�
 const RETENTION_DAYS = 400;           // 記録を残す日数
 const SECTION_ACTIVE_DAYS = 30;       // この日数のあいだ届いていないセクションは「削除された」とみなして一覧から外す
 const MAX_SECTIONS = 60;              // 登録できるセクション数の上限（荒らし対策）
+const LIKES_PER_REQUEST = 50;         // 1回の送信で加算できるいいねの上限（連打はまとめて送られる）
+const LIKES_PER_SESSION_DAY = 3000;   // 1つの訪問が1日に加算できる上限（人の連打では届かない数）
 const LOGIN_DAYS = 30;                // ログインの有効期限
 const LOGIN_FAIL_LIMIT = 10;          // 15分間にこの回数ログインに失敗したら一時停止
 const BOT_PATTERN = /bot|crawl|spider|slurp|headless|lighthouse|preview|facebookexternalhit|embedly|monitor|curl|wget|python|axios|node-fetch/i;
@@ -102,6 +106,7 @@ async function route(request, env, ctx) {
     const path = url.pathname;
 
     if (path === "/collect") return collect(request, env);
+    if (path === "/likes") return likes(request, env);
     if (path === "/login" && request.method === "POST") return login(request, env);
     if (path === "/logout" && request.method === "POST") return logout();
 
@@ -262,6 +267,72 @@ async function collect(request, env) {
 }
 
 /* ========================================
+   いいね
+======================================== */
+
+async function likeTotal(env) {
+    const row = await env.DB.prepare("SELECT COALESCE(SUM(count), 0) AS total FROM likes_daily").first();
+    return Number(row?.total || 0);
+}
+
+async function likes(request, env) {
+    const origin = request.headers.get("Origin") || "";
+    const allowed = allowedOrigins(env).includes(origin);
+    const cors = allowed
+        ? { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Methods": "GET, POST", "Access-Control-Allow-Headers": "Content-Type", "Vary": "Origin" }
+        : {};
+
+    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
+
+    if (request.method === "GET") {
+        return json({ total: await likeTotal(env) }, 200, cors);
+    }
+
+    if (request.method !== "POST") return new Response(null, { status: 405 });
+    if (!allowed) return json({ error: "forbidden" }, 403);
+
+    const ua = request.headers.get("User-Agent") || "";
+    if (!ua || BOT_PATTERN.test(ua)) return json({ total: await likeTotal(env) }, 200, cors);
+
+    let body;
+    try {
+        const text = await request.text();
+        if (text.length > 500) return new Response(null, { status: 413, headers: cors });
+        body = JSON.parse(text);
+    } catch {
+        return new Response(null, { status: 400, headers: cors });
+    }
+
+    const session = cleanText(body.s, 32);
+    if (!/^[a-z0-9]{8,32}$/.test(session)) return new Response(null, { status: 400, headers: cors });
+    let n = Math.floor(Number(body.n));
+    if (!Number.isFinite(n) || n < 1) return new Response(null, { status: 400, headers: cors });
+    n = Math.min(n, LIKES_PER_REQUEST);
+
+    const day = jstDay(Date.now());
+    const used = await env.DB
+        .prepare("SELECT count FROM like_sessions WHERE session = ? AND day = ?")
+        .bind(session, day)
+        .first();
+    n = Math.min(n, LIKES_PER_SESSION_DAY - Number(used?.count || 0));
+
+    if (n > 0) {
+        await env.DB.batch([
+            env.DB.prepare(
+                `INSERT INTO like_sessions (session, day, count) VALUES (?, ?, ?)
+                 ON CONFLICT(session, day) DO UPDATE SET count = count + excluded.count`
+            ).bind(session, day, n),
+            env.DB.prepare(
+                `INSERT INTO likes_daily (day, count) VALUES (?, ?)
+                 ON CONFLICT(day) DO UPDATE SET count = count + excluded.count`
+            ).bind(day, n),
+        ]);
+    }
+
+    return json({ total: await likeTotal(env), added: Math.max(n, 0) }, 200, cors);
+}
+
+/* ========================================
    ログイン（本人だけがダッシュボードを見られるように）
 ======================================== */
 
@@ -360,7 +431,7 @@ export async function buildSummary(db, to, days) {
 
     const activeSince = Date.now() - SECTION_ACTIVE_DAYS * 24 * 60 * 60 * 1000;
 
-    const [daily, unique, prev, sections, sectionMeta, clicks, referrers, devices, countries] = await db.batch([
+    const [daily, unique, prev, sections, sectionMeta, clicks, referrers, devices, countries, likeDays, likePrev, likeAll] = await db.batch([
         range(`SELECT day,
                       SUM(type = 'pageview') AS pv,
                       COUNT(DISTINCT CASE WHEN type = 'pageview' THEN session END) AS sessions
@@ -384,14 +455,18 @@ export async function buildSummary(db, to, days) {
         range(`SELECT country, COUNT(DISTINCT session) AS sessions
                FROM events WHERE type = 'pageview' AND day BETWEEN ? AND ?
                GROUP BY country ORDER BY sessions DESC LIMIT 8`),
+        range("SELECT day, count FROM likes_daily WHERE day BETWEEN ? AND ?"),
+        db.prepare("SELECT COALESCE(SUM(count), 0) AS n FROM likes_daily WHERE day BETWEEN ? AND ?").bind(prevFrom, prevTo),
+        db.prepare("SELECT COALESCE(SUM(count), 0) AS n FROM likes_daily"),
     ]);
 
     // 日付の抜けを0で埋める
     const byDay = new Map(rows(daily).map((row) => [row.day, row]));
+    const likeByDay = new Map(rows(likeDays).map((row) => [row.day, Number(row.count)]));
     const series = [];
     for (let day = from; day <= to; day = addDays(day, 1)) {
         const row = byDay.get(day);
-        series.push({ day, pv: Number(row?.pv || 0), sessions: Number(row?.sessions || 0) });
+        series.push({ day, pv: Number(row?.pv || 0), sessions: Number(row?.sessions || 0), likes: likeByDay.get(day) || 0 });
     }
 
     const pv = series.reduce((sum, row) => sum + row.pv, 0);
@@ -432,6 +507,9 @@ export async function buildSummary(db, to, days) {
             prevPv: Number(prevRow.pv || 0),
             prevSessions: Number(prevRow.sessions || 0),
             workClicks: group("work_click").reduce((sum, row) => sum + row.count, 0),
+            likes: series.reduce((sum, row) => sum + row.likes, 0),
+            prevLikes: Number(rows(likePrev)[0]?.n || 0),
+            likesTotal: Number(rows(likeAll)[0]?.n || 0),
             avgSections: sessionTotal
                 ? sectionList.reduce((sum, row) => sum + row.sessions, 0) / sessionTotal
                 : 0,
@@ -481,6 +559,7 @@ export async function buildReport(db, day, dashboardUrl) {
 
     lines.push(`👀 閲覧数 **${t.pv}**　前日比 ${signed(t.pv - t.prevPv)}　/ 前の7日平均 ${avg.toFixed(1)}`);
     lines.push(`🧑 訪問 **${t.sessions}**　前日比 ${signed(t.sessions - t.prevSessions)}`);
+    lines.push(`❤️ いいね **+${t.likes}**　累計 ${t.likesTotal}`);
 
     if (t.sessions === 0) {
         lines.push("\nこの日のアクセスはありませんでした。");
@@ -558,5 +637,6 @@ async function cleanup(env) {
     await env.DB.batch([
         env.DB.prepare("DELETE FROM events WHERE day < ?").bind(limit),
         env.DB.prepare("DELETE FROM login_failures WHERE ts < ?").bind(Date.now() - 24 * 60 * 60 * 1000),
+        env.DB.prepare("DELETE FROM like_sessions WHERE day < ?").bind(addDays(jstDay(Date.now()), -2)),
     ]);
 }

@@ -143,6 +143,38 @@ for (let i = 0; i < 70; i += 1) await post({ s: `cap${String(i).padStart(5, "0")
 assert.ok(db.raw.prepare("SELECT COUNT(*) n FROM sections").get().n <= 60, "section table capped");
 db.raw.exec("DELETE FROM sections WHERE id LIKE 'zone-%'; DELETE FROM events WHERE session LIKE 'cap%' OR session LIKE 'sec%'");
 
+// --- likes
+const likeReq = (body, headers = {}, method = "POST") => call("/likes", {
+    method,
+    headers: { Origin: "https://haru2401game.github.io", "User-Agent": UA, "Content-Type": "text/plain", ...headers },
+    body: method === "GET" ? undefined : JSON.stringify(body),
+});
+r = await likeReq(null, {}, "GET");
+assert.equal((await r.json()).total, 0);
+assert.equal(r.headers.get("Access-Control-Allow-Origin"), "https://haru2401game.github.io");
+r = await likeReq({ s: "like1234", n: 5 });
+assert.deepEqual(await r.json(), { total: 5, added: 5 });
+r = await likeReq({ s: "like1234", n: 999 });
+assert.equal((await r.json()).added, 50, "per-request cap");
+r = await likeReq({ s: "like1234", n: 3 }, { Origin: "https://evil.example" });
+assert.equal(r.status, 403);
+r = await likeReq({ s: "like1234", n: -4 });
+assert.equal(r.status, 400);
+r = await likeReq({ s: "BAD", n: 1 });
+assert.equal(r.status, 400);
+r = await likeReq({ s: "like1234", n: 2 }, { "User-Agent": "curl/8" });
+assert.equal((await r.json()).total, 55, "bots not counted");
+// per-session daily cap
+db.raw.prepare("UPDATE like_sessions SET count = 2990 WHERE session = 'like1234'").run();
+r = await likeReq({ s: "like1234", n: 50 });
+assert.equal((await r.json()).added, 10);
+r = await likeReq({ s: "like1234", n: 50 });
+assert.equal((await r.json()).added, 0);
+sum = await (await call("/api/summary?days=1", auth)).json();
+assert.equal(sum.totals.likes, 65);
+assert.equal(sum.totals.likesTotal, 65);
+assert.equal(sum.series.at(-1).likes, 65);
+
 // --- report: insert yesterday data
 const today = jstDay(Date.now());
 const y = addDays(today, -1);
@@ -157,6 +189,7 @@ assert.match(report.embeds[0].title, new RegExp(y));
 assert.match(text, /閲覧数 \*\*2\*\*/);
 assert.match(text, /About 50%/);
 assert.deepEqual(report.allowed_mentions, { parse: [] });
+assert.match(text, /いいね \*\*\+0\*\*　累計 65/);
 assert.match(text, /1\. Falien　1回/);
 assert.match(text, /スマホ 1/);
 

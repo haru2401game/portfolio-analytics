@@ -174,6 +174,8 @@ function render(data) {
     $("kpi-sections").textContent = t.avgSections.toFixed(1);
     $("kpi-sections-sub").textContent = `全${data.sections.length}セクション中`;
     $("kpi-works").textContent = t.workClicks.toLocaleString();
+    $("kpi-likes").textContent = t.likes.toLocaleString();
+    $("kpi-likes-sub").textContent = `累計 ${t.likesTotal.toLocaleString()}`;
     $("kpi-works-sub").textContent = t.sessions ? `訪問あたり ${(t.workClicks / t.sessions).toFixed(2)}回` : "訪問あたり -";
     setDelta($("kpi-pv-delta"), t.pv, t.prevPv, r.days);
     setDelta($("kpi-sessions-delta"), t.sessions, t.prevSessions, r.days);
